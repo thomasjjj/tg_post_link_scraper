@@ -10,19 +10,81 @@ from telethon.errors import SessionPasswordNeededError
 nest_asyncio.apply()
 
 # -------------------------------------------
+# Translation Dictionary
+# -------------------------------------------
+MESSAGES = {
+    "title": {"en": "Telegram Post Data Retriever", "uk": "Отримувач даних публікацій Telegram"},
+    "description": {
+        "en": "This app retrieves data from Telegram posts using your Telethon API credentials.",
+        "uk": "Цей додаток отримує дані з публікацій Telegram, використовуючи ваші облікові дані Telethon API."
+    },
+    "step1": {"en": "Step 1: Sign in to Telegram", "uk": "Крок 1: Увійдіть у Telegram"},
+    "enter_api_id": {"en": "Enter your API ID", "uk": "Введіть ваш API ID"},
+    "enter_api_hash": {"en": "Enter your API Hash", "uk": "Введіть ваш API Hash"},
+    "enter_phone": {
+        "en": "Enter your phone number (with country code, e.g. +441234567890)",
+        "uk": "Введіть свій номер телефону (з кодом країни, наприклад, +441234567890)"
+    },
+    "sign_in": {"en": "Sign In", "uk": "Увійти"},
+    "credentials_missing": {
+        "en": "Please provide all credentials (API ID, API Hash and phone number).",
+        "uk": "Будь ласка, надайте всі облікові дані (API ID, API Hash та номер телефону)."
+    },
+    "api_id_int_error": {"en": "API ID must be an integer.", "uk": "API ID має бути цілим числом."},
+    "signing_in_spinner": {"en": "Signing in to Telegram...", "uk": "Вхід у Telegram..."},
+    "sign_in_success": {"en": "Signed in successfully!", "uk": "Вхід успішний!"},
+    "sign_in_error_prefix": {"en": "An error occurred during sign in: ", "uk": "Сталася помилка при вході: "},
+    "connecting_spinner": {"en": "Connecting to Telegram...", "uk": "Підключення до Telegram..."},
+    "awaiting_code_msg": {
+        "en": "An authentication code has been sent. Please enter it below and click 'Submit Code'.",
+        "uk": "Код аутентифікації надіслано. Будь ласка, введіть його нижче та натисніть 'Відправити код'."
+    },
+    "enter_auth_code": {"en": "Enter authentication code", "uk": "Введіть код аутентифікації"},
+    "submit_code": {"en": "Submit Code", "uk": "Відправити код"},
+    "signing_in_with_code_spinner": {"en": "Signing in...", "uk": "Вхід..."},
+    "auth_sign_in_error_prefix": {"en": "Error signing in with code: ", "uk": "Помилка при вході з кодом: "},
+    "step2": {"en": "Step 2: Enter Telegram Post Links", "uk": "Крок 2: Введіть посилання публікацій Telegram"},
+    "enter_links": {
+        "en": "Enter one or more Telegram post links (separated by spaces, commas, or new lines)",
+        "uk": "Введіть одне або декілька посилань публікацій Telegram (розділених пробілами, комами або новими рядками)"
+    },
+    "processed_links": {"en": "Processed Links:", "uk": "Оброблені посилання:"},
+    "retrieving_data_spinner": {"en": "Retrieving message data...", "uk": "Отримання даних повідомлення..."},
+    "retrieved_data": {"en": "Retrieved Telegram Data", "uk": "Отримані дані Telegram"},
+    "download_csv": {"en": "Download data as CSV", "uk": "Завантажити дані у форматі CSV"},
+    "raw_message_objects": {"en": "Raw Message Objects", "uk": "Сирі об'єкти повідомлень"},
+    "message_object": {"en": "Message Object", "uk": "Об'єкт повідомлення"},
+    "no_links_error": {"en": "Please enter some Telegram post links.", "uk": "Будь ласка, введіть посилання публікацій Telegram."},
+    "no_message_data_warning": {
+        "en": "No message data was retrieved. Please check your links or try again.",
+        "uk": "Дані повідомлень не отримано. Будь ласка, перевірте посилання або спробуйте знову."
+    },
+    "link_not_recognised": {"en": "Link not recognised:", "uk": "Посилання не розпізнано:"},
+    "processing_message": {
+        "en": "Processing message from **{channel}** with ID **{msg_id}**",
+        "uk": "Обробка повідомлення з **{channel}** з ID **{msg_id}**"
+    }
+}
+
+# -------------------------------------------
+# Language Selection
+# -------------------------------------------
+language = st.selectbox("Select Language", options=["English", "Українська"])
+lang = "en" if language == "English" else "uk"
+
+# -------------------------------------------
 # Asynchronous functions for Telegram operations
 # -------------------------------------------
 
-# Asynchronous function to create the Telegram client.
-async def async_create_client(api_id, api_hash):
+# Create and connect the client.
+async def async_get_telegram_client(api_id, api_hash, phone):
     client = TelegramClient("session_name", api_id, api_hash)
-    await client.connect()
+    await client.start(phone=phone)
     return client
 
 # -------------------------------------------
 # Helper functions for message processing
 # -------------------------------------------
-
 def process_link(link):
     pattern = r"(?:https?://)?t\.me/([^/]+)/(\d+)"
     match = re.search(pattern, link)
@@ -46,12 +108,12 @@ async def process_messages(client, links):
     for link in links:
         channel_username, message_id = process_link(link)
         if not channel_username:
-            st.warning(f"Link not recognised: {link}")
+            st.warning(f"{MESSAGES['link_not_recognised'][lang]} {link}")
             continue
-        st.write(f"Processing message from **{channel_username}** with ID **{message_id}**")
+        st.write(MESSAGES["processing_message"][lang].format(channel=channel_username, msg_id=message_id))
         message, error = await get_message_data(client, channel_username, message_id)
         if error:
-            st.error(f"Error retrieving message for link **{link}**: {error}")
+            st.error(MESSAGES["auth_sign_in_error_prefix"][lang] + f"{link}: {error}")
             continue
         if message:
             raw_messages.append((link, message))
@@ -87,97 +149,96 @@ async def process_messages(client, links):
             }
             results.append(data)
         else:
-            st.warning(f"No message found for link: {link}")
+            st.warning(MESSAGES["no_message_found"][lang].format(link=link))
     return results, raw_messages
 
 # -------------------------------------------
 # Streamlit User Interface
 # -------------------------------------------
-st.title("Telegram Post Data Retriever")
-st.markdown("This app retrieves data from Telegram posts using your Telethon API credentials.")
+st.title(MESSAGES["title"][lang])
+st.markdown(MESSAGES["description"][lang])
 
 # Create a persistent event loop if not already in session state.
 if "loop" not in st.session_state:
     st.session_state.loop = asyncio.new_event_loop()
 
 # Step 1: Sign in to Telegram.
-st.header("Step 1: Sign in to Telegram")
-api_id_input = st.text_input("Enter your API ID")
-api_hash_input = st.text_input("Enter your API Hash")
-phone_input = st.text_input("Enter your phone number (with country code, e.g. +441234567890)")
+st.header(MESSAGES["step1"][lang])
+api_id_input = st.text_input(MESSAGES["enter_api_id"][lang])
+api_hash_input = st.text_input(MESSAGES["enter_api_hash"][lang])
+phone_input = st.text_input(MESSAGES["enter_phone"][lang])
 
-# When the user clicks "Sign In", attempt to connect.
-if st.button("Sign In"):
+if st.button(MESSAGES["sign_in"][lang]):
     if not api_id_input or not api_hash_input or not phone_input:
-        st.error("Please provide all credentials (API ID, API Hash and phone number).")
+        st.error(MESSAGES["credentials_missing"][lang])
     else:
         try:
             api_id_int = int(api_id_input)
         except ValueError:
-            st.error("API ID must be an integer.")
+            st.error(MESSAGES["api_id_int_error"][lang])
         else:
-            with st.spinner("Connecting to Telegram..."):
+            with st.spinner(MESSAGES["signing_in_spinner"][lang]):
                 try:
-                    # Create and connect the client.
+                    # Use the persistent loop to sign in.
                     client = st.session_state.loop.run_until_complete(
-                        async_create_client(api_id_int, api_hash_input)
+                        async_get_telegram_client(api_id_int, api_hash_input, phone_input)
                     )
+                    st.success(MESSAGES["sign_in_success"][lang])
                     st.session_state.client = client
                     st.session_state.phone = phone_input
-                    # If the user is not already authorized, send the code request.
                     if not st.session_state.loop.run_until_complete(client.is_user_authorized()):
                         st.session_state.loop.run_until_complete(client.send_code_request(phone_input))
                         st.session_state.awaiting_code = True
-                        st.info("An authentication code has been sent. Please enter it below and click 'Submit Code'.")
+                        st.info(MESSAGES["awaiting_code_msg"][lang])
                     else:
-                        st.success("Signed in successfully!")
+                        st.success(MESSAGES["sign_in_success"][lang])
                 except Exception as e:
-                    st.error(f"An error occurred during connection: {e}")
+                    st.error(MESSAGES["sign_in_error_prefix"][lang] + str(e))
 
 # If an authentication code is needed, display an input field.
 if st.session_state.get("awaiting_code", False):
-    auth_code = st.text_input("Enter authentication code", key="auth_code")
-    if st.button("Submit Code"):
-        with st.spinner("Signing in..."):
+    auth_code = st.text_input(MESSAGES["enter_auth_code"][lang], key="auth_code")
+    if st.button(MESSAGES["submit_code"][lang]):
+        with st.spinner(MESSAGES["signing_in_with_code_spinner"][lang]):
             try:
                 st.session_state.loop.run_until_complete(
                     st.session_state.client.sign_in(phone_input, auth_code)
                 )
-                st.success("Signed in successfully!")
+                st.success(MESSAGES["sign_in_success"][lang])
                 st.session_state.awaiting_code = False
             except Exception as e:
-                st.error(f"Error signing in with code: {e}")
+                st.error(MESSAGES["auth_sign_in_error_prefix"][lang] + str(e))
 
 # Step 2: Enter Telegram Post Links.
 if "client" in st.session_state and not st.session_state.get("awaiting_code", False):
-    st.header("Step 2: Enter Telegram Post Links")
-    links_input = st.text_area("Enter one or more Telegram post links (separated by spaces, commas, or new lines)")
-    if st.button("Process Links"):
+    st.header(MESSAGES["step2"][lang])
+    links_input = st.text_area(MESSAGES["enter_links"][lang])
+    if st.button(MESSAGES["sign_in"][lang] + " & " + MESSAGES["step2"][lang]):
         if links_input:
             links = [link.strip() for link in re.split(r"[\s,]+", links_input) if link.strip()]
-            st.write("Processed Links:", ", ".join(links))
-            with st.spinner("Retrieving message data..."):
+            st.write(MESSAGES["processed_links"][lang], ", ".join(links))
+            with st.spinner(MESSAGES["retrieving_data_spinner"][lang]):
                 results, raw_messages = st.session_state.loop.run_until_complete(
                     process_messages(st.session_state.client, links)
                 )
             if results:
                 df = pd.DataFrame(results)
-                st.subheader("Retrieved Telegram Data")
+                st.subheader(MESSAGES["retrieved_data"][lang])
                 st.dataframe(df)
                 csv = df.to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    label="Download data as CSV",
+                    label=MESSAGES["download_csv"][lang],
                     data=csv,
                     file_name="telegram_messages.csv",
                     mime="text/csv"
                 )
             else:
-                st.warning("No message data was retrieved. Please check your links or try again.")
+                st.warning(MESSAGES["no_message_data_warning"][lang])
             # Display raw message objects in individual text boxes.
             if raw_messages:
-                st.subheader("Raw Message Objects")
+                st.subheader(MESSAGES["raw_message_objects"][lang])
                 for link, message in raw_messages:
                     with st.expander(f"Message from {link}"):
-                        st.text_area("Message Object", value=str(message), height=200, disabled=True)
+                        st.text_area(MESSAGES["message_object"][lang], value=str(message), height=200, disabled=True)
         else:
-            st.error("Please enter some Telegram post links.")
+            st.error(MESSAGES["no_links_error"][lang])
