@@ -24,7 +24,7 @@ MESSAGES = {
             "### Overview:\n\n"
             "1. Retrieve your Telegram API credentials by visiting [my.telegram.org](https://my.telegram.org). Log in with your phone number, then navigate to **API Development Tools** to create a new application. Your API ID and API Hash will be provided.\n\n"
             "2. Enter your API credentials and phone number below, then click **Sign In**.\n\n"
-            "3. If required, enter the authentication code that Telegram sends you.\n\n"
+            "3. If required, enter the authentication code that Telegram sends you. If two‐factor authentication is enabled, you will then be prompted for your password.\n\n"
             "4. Once signed in, enter one or more Telegram post links (e.g. `https://t.me/channel/12345`) to retrieve message data. The data will be displayed in a table and as raw message objects. You can also download the data as a CSV file.\n\n"
             "If you encounter a **'database is locked'** error, click **Reset Session** to disconnect any previous session."
         ),
@@ -32,7 +32,7 @@ MESSAGES = {
             "### Огляд:\n\n"
             "1. Отримайте свої облікові дані Telegram API, відвідавши [my.telegram.org](https://my.telegram.org). Увійдіть за допомогою свого номера телефону, а потім перейдіть до **API Development Tools**, щоб створити новий додаток. Вам будуть надані API ID та API Hash.\n\n"
             "2. Введіть свої облікові дані API та номер телефону нижче, а потім натисніть **Увійти**.\n\n"
-            "3. Якщо потрібно, введіть код аутентифікації, який надсилає Telegram.\n\n"
+            "3. Якщо потрібно, введіть код аутентифікації, який надсилає Telegram. Якщо увімкнено двофакторну аутентифікацію, ви будете запитані про ваш пароль.\n\n"
             "4. Після входу введіть одне або декілька посилань публікацій Telegram (наприклад, `https://t.me/channel/12345`), щоб отримати дані повідомлень. Дані будуть відображені у вигляді таблиці та як сирі об'єкти повідомлень. Також ви зможете завантажити дані у форматі CSV.\n\n"
             "Якщо ви отримаєте помилку **'database is locked'**, натисніть **Скинути сесію**, щоб розірвати попередню сесію."
         )
@@ -55,7 +55,6 @@ MESSAGES = {
     "signing_in_spinner": {"en": "Signing in to Telegram...", "uk": "Вхід у Telegram..."},
     "sign_in_success": {"en": "Signed in successfully!", "uk": "Вхід успішний!"},
     "sign_in_error_prefix": {"en": "An error occurred during sign in: ", "uk": "Сталася помилка при вході: "},
-    "connecting_spinner": {"en": "Connecting to Telegram...", "uk": "Підключення до Telegram..."},
     "awaiting_code_msg": {
         "en": "An authentication code has been sent. Please enter it below and click 'Submit Code'.",
         "uk": "Код аутентифікації надіслано. Будь ласка, введіть його нижче та натисніть 'Відправити код'."
@@ -63,7 +62,12 @@ MESSAGES = {
     "enter_auth_code": {"en": "Enter authentication code", "uk": "Введіть код аутентифікації"},
     "submit_code": {"en": "Submit Code", "uk": "Відправити код"},
     "signing_in_with_code_spinner": {"en": "Signing in...", "uk": "Вхід..."},
-    "auth_sign_in_error_prefix": {"en": "Error signing in with code: ", "uk": "Помилка при вході з кодом: "},
+    "enter_password": {"en": "Enter your 2FA password", "uk": "Введіть ваш 2FA пароль"},
+    "submit_password": {"en": "Submit Password", "uk": "Відправити пароль"},
+    "2fa_required": {
+        "en": "Two-factor authentication is enabled. Please enter your password.",
+        "uk": "Увімкнено двофакторну аутентифікацію. Будь ласка, введіть свій пароль."
+    },
     "step2": {"en": "Step 2: Enter Telegram Post Links", "uk": "Крок 2: Введіть посилання публікацій Telegram"},
     "enter_links": {
         "en": "Enter one or more Telegram post links (separated by spaces, commas, or new lines)",
@@ -105,8 +109,8 @@ st.markdown(MESSAGES["overview"][lang])
 # -------------------------------------------
 # Asynchronous functions for Telegram operations
 # -------------------------------------------
-
 async def async_get_telegram_client(api_id, api_hash, phone):
+    # Use a session file name that includes the phone number to allow resetting by phone.
     client = TelegramClient("session_" + phone, api_id, api_hash)
     await client.start(phone=phone)
     return client
@@ -142,7 +146,7 @@ async def process_messages(client, links):
         st.write(MESSAGES["processing_message"][lang].format(channel=channel_username, msg_id=message_id))
         message, error = await get_message_data(client, channel_username, message_id)
         if error:
-            st.error(MESSAGES["auth_sign_in_error_prefix"][lang] + f"{link}: {error}")
+            st.error(MESSAGES["sign_in_error_prefix"][lang] + f"{link}: {error}")
             continue
         if message:
             raw_messages.append((link, message))
@@ -248,13 +252,33 @@ if st.session_state.get("awaiting_code", False):
                 )
                 st.success(MESSAGES["sign_in_success"][lang])
                 st.session_state.awaiting_code = False
+            except SessionPasswordNeededError:
+                st.info(MESSAGES["2fa_required"][lang])
+                st.session_state.awaiting_code = False
+                st.session_state.awaiting_password = True
+            except Exception as e:
+                st.error(MESSAGES["auth_sign_in_error_prefix"][lang] + str(e))
+
+# -------------------------------------------
+# Two-Step Authentication: Enter Password if 2FA is Required
+# -------------------------------------------
+if st.session_state.get("awaiting_password", False):
+    password = st.text_input(MESSAGES["enter_password"][lang], type="password", key="password")
+    if st.button(MESSAGES["submit_password"][lang]):
+        with st.spinner(MESSAGES["signing_in_with_code_spinner"][lang]):
+            try:
+                st.session_state.loop.run_until_complete(
+                    st.session_state.client.sign_in(password=password)
+                )
+                st.success(MESSAGES["sign_in_success"][lang])
+                st.session_state.awaiting_password = False
             except Exception as e:
                 st.error(MESSAGES["auth_sign_in_error_prefix"][lang] + str(e))
 
 # -------------------------------------------
 # Streamlit User Interface - Process Links
 # -------------------------------------------
-if "client" in st.session_state and not st.session_state.get("awaiting_code", False):
+if "client" in st.session_state and not st.session_state.get("awaiting_code", False) and not st.session_state.get("awaiting_password", False):
     st.header(MESSAGES["step2"][lang])
     links_input = st.text_area(MESSAGES["enter_links"][lang])
     if st.button(MESSAGES["sign_in"][lang] + " & " + MESSAGES["step2"][lang]):
