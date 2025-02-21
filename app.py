@@ -7,11 +7,11 @@ import os
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 
-# Apply nest_asyncio to allow nested event loops if necessary.
+# Apply nest_asyncio to allow nested event loops.
 nest_asyncio.apply()
 
 # -------------------------------------------
-# Translation Dictionary
+# Translation Dictionary (omitted for brevity; assume same as before)
 # -------------------------------------------
 MESSAGES = {
     "title": {"en": "Telegram Post Data Retriever", "uk": "Отримувач даних публікацій Telegram"},
@@ -110,9 +110,9 @@ st.markdown(MESSAGES["overview"][lang])
 # Asynchronous functions for Telegram operations
 # -------------------------------------------
 async def async_get_telegram_client(api_id, api_hash, phone):
-    # Use a session file name that includes the phone number to allow resetting by phone.
+    # Use a session file name that includes the phone number.
     client = TelegramClient("session_" + phone, api_id, api_hash)
-    await client.start(phone=phone)
+    await client.connect()  # Connect without interactive prompts.
     return client
 
 # -------------------------------------------
@@ -196,7 +196,6 @@ if st.button(MESSAGES["reset_session"][lang]):
         st.session_state.loop.run_until_complete(st.session_state.client.disconnect())
         del st.session_state.client
     session_file = None
-    # Look for a session file starting with "session_"
     for f in os.listdir("."):
         if f.startswith("session_") and f.endswith(".session"):
             session_file = f
@@ -206,7 +205,7 @@ if st.button(MESSAGES["reset_session"][lang]):
     st.success(MESSAGES["reset_success"][lang])
 
 # -------------------------------------------
-# Streamlit User Interface - Sign In
+# Streamlit UI - Sign In
 # -------------------------------------------
 st.header(MESSAGES["step1"][lang])
 api_id_input = st.text_input(MESSAGES["enter_api_id"][lang])
@@ -227,7 +226,6 @@ if st.button(MESSAGES["sign_in"][lang]):
                     client = st.session_state.loop.run_until_complete(
                         async_get_telegram_client(api_id_int, api_hash_input, phone_input)
                     )
-                    st.success(MESSAGES["sign_in_success"][lang])
                     st.session_state.client = client
                     st.session_state.phone = phone_input
                     if not st.session_state.loop.run_until_complete(client.is_user_authorized()):
@@ -276,7 +274,7 @@ if st.session_state.get("awaiting_password", False):
                 st.error(MESSAGES["auth_sign_in_error_prefix"][lang] + str(e))
 
 # -------------------------------------------
-# Streamlit User Interface - Process Links
+# Streamlit UI - Process Links
 # -------------------------------------------
 if "client" in st.session_state and not st.session_state.get("awaiting_code", False) and not st.session_state.get("awaiting_password", False):
     st.header(MESSAGES["step2"][lang])
