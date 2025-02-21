@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import asyncio
 import nest_asyncio
+import os
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 
@@ -18,6 +19,26 @@ MESSAGES = {
         "en": "This app retrieves data from Telegram posts using your Telethon API credentials.",
         "uk": "Цей додаток отримує дані з публікацій Telegram, використовуючи ваші облікові дані Telethon API."
     },
+    "overview": {
+        "en": (
+            "### Overview:\n\n"
+            "1. Retrieve your Telegram API credentials by visiting [my.telegram.org](https://my.telegram.org). Log in with your phone number, then navigate to **API Development Tools** to create a new application. Your API ID and API Hash will be provided.\n\n"
+            "2. Enter your API credentials and phone number below, then click **Sign In**.\n\n"
+            "3. If required, enter the authentication code that Telegram sends you.\n\n"
+            "4. Once signed in, enter one or more Telegram post links (e.g. `https://t.me/channel/12345`) to retrieve message data. The data will be displayed in a table and as raw message objects. You can also download the data as a CSV file.\n\n"
+            "If you encounter a **'database is locked'** error, click **Reset Session** to disconnect any previous session."
+        ),
+        "uk": (
+            "### Огляд:\n\n"
+            "1. Отримайте свої облікові дані Telegram API, відвідавши [my.telegram.org](https://my.telegram.org). Увійдіть за допомогою свого номера телефону, а потім перейдіть до **API Development Tools**, щоб створити новий додаток. Вам будуть надані API ID та API Hash.\n\n"
+            "2. Введіть свої облікові дані API та номер телефону нижче, а потім натисніть **Увійти**.\n\n"
+            "3. Якщо потрібно, введіть код аутентифікації, який надсилає Telegram.\n\n"
+            "4. Після входу введіть одне або декілька посилань публікацій Telegram (наприклад, `https://t.me/channel/12345`), щоб отримати дані повідомлень. Дані будуть відображені у вигляді таблиці та як сирі об'єкти повідомлень. Також ви зможете завантажити дані у форматі CSV.\n\n"
+            "Якщо ви отримаєте помилку **'database is locked'**, натисніть **Скинути сесію**, щоб розірвати попередню сесію."
+        )
+    },
+    "reset_session": {"en": "Reset Session", "uk": "Скинути сесію"},
+    "reset_success": {"en": "Session reset successfully.", "uk": "Сесію скинуто успішно."},
     "step1": {"en": "Step 1: Sign in to Telegram", "uk": "Крок 1: Увійдіть у Telegram"},
     "enter_api_id": {"en": "Enter your API ID", "uk": "Введіть ваш API ID"},
     "enter_api_hash": {"en": "Enter your API Hash", "uk": "Введіть ваш API Hash"},
@@ -63,6 +84,10 @@ MESSAGES = {
     "processing_message": {
         "en": "Processing message from **{channel}** with ID **{msg_id}**",
         "uk": "Обробка повідомлення з **{channel}** з ID **{msg_id}**"
+    },
+    "no_message_found": {
+        "en": "No message found for link: {link}",
+        "uk": "Не знайдено повідомлення для посилання: {link}"
     }
 }
 
@@ -73,12 +98,16 @@ language = st.selectbox("Select Language", options=["English", "Українсь
 lang = "en" if language == "English" else "uk"
 
 # -------------------------------------------
+# Overview Section
+# -------------------------------------------
+st.markdown(MESSAGES["overview"][lang])
+
+# -------------------------------------------
 # Asynchronous functions for Telegram operations
 # -------------------------------------------
 
-# Create and connect the client.
 async def async_get_telegram_client(api_id, api_hash, phone):
-    client = TelegramClient("session_name", api_id, api_hash)
+    client = TelegramClient("session_" + phone, api_id, api_hash)
     await client.start(phone=phone)
     return client
 
@@ -153,16 +182,28 @@ async def process_messages(client, links):
     return results, raw_messages
 
 # -------------------------------------------
-# Streamlit User Interface
+# Session Management and Reset
 # -------------------------------------------
-st.title(MESSAGES["title"][lang])
-st.markdown(MESSAGES["description"][lang])
-
-# Create a persistent event loop if not already in session state.
 if "loop" not in st.session_state:
     st.session_state.loop = asyncio.new_event_loop()
 
-# Step 1: Sign in to Telegram.
+if st.button(MESSAGES["reset_session"][lang]):
+    if "client" in st.session_state:
+        st.session_state.loop.run_until_complete(st.session_state.client.disconnect())
+        del st.session_state.client
+    session_file = None
+    # Look for a session file starting with "session_"
+    for f in os.listdir("."):
+        if f.startswith("session_") and f.endswith(".session"):
+            session_file = f
+            break
+    if session_file:
+        os.remove(session_file)
+    st.success(MESSAGES["reset_success"][lang])
+
+# -------------------------------------------
+# Streamlit User Interface - Sign In
+# -------------------------------------------
 st.header(MESSAGES["step1"][lang])
 api_id_input = st.text_input(MESSAGES["enter_api_id"][lang])
 api_hash_input = st.text_input(MESSAGES["enter_api_hash"][lang])
@@ -179,7 +220,6 @@ if st.button(MESSAGES["sign_in"][lang]):
         else:
             with st.spinner(MESSAGES["signing_in_spinner"][lang]):
                 try:
-                    # Use the persistent loop to sign in.
                     client = st.session_state.loop.run_until_complete(
                         async_get_telegram_client(api_id_int, api_hash_input, phone_input)
                     )
@@ -195,7 +235,9 @@ if st.button(MESSAGES["sign_in"][lang]):
                 except Exception as e:
                     st.error(MESSAGES["sign_in_error_prefix"][lang] + str(e))
 
-# If an authentication code is needed, display an input field.
+# -------------------------------------------
+# Two-Step Authentication: Enter Code if Needed
+# -------------------------------------------
 if st.session_state.get("awaiting_code", False):
     auth_code = st.text_input(MESSAGES["enter_auth_code"][lang], key="auth_code")
     if st.button(MESSAGES["submit_code"][lang]):
@@ -209,7 +251,9 @@ if st.session_state.get("awaiting_code", False):
             except Exception as e:
                 st.error(MESSAGES["auth_sign_in_error_prefix"][lang] + str(e))
 
-# Step 2: Enter Telegram Post Links.
+# -------------------------------------------
+# Streamlit User Interface - Process Links
+# -------------------------------------------
 if "client" in st.session_state and not st.session_state.get("awaiting_code", False):
     st.header(MESSAGES["step2"][lang])
     links_input = st.text_area(MESSAGES["enter_links"][lang])
@@ -234,7 +278,6 @@ if "client" in st.session_state and not st.session_state.get("awaiting_code", Fa
                 )
             else:
                 st.warning(MESSAGES["no_message_data_warning"][lang])
-            # Display raw message objects in individual text boxes.
             if raw_messages:
                 st.subheader(MESSAGES["raw_message_objects"][lang])
                 for link, message in raw_messages:
