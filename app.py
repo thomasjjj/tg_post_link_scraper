@@ -39,8 +39,10 @@ async def get_message_data(client, channel_username, message_id):
 
 
 # Asynchronous function to process multiple links and compile data.
+# This function returns a tuple: (results_for_table, raw_messages)
 async def process_messages(client, links):
     results = []
+    raw_messages = []
     for link in links:
         channel_username, message_id = process_link(link)
         if not channel_username:
@@ -52,6 +54,7 @@ async def process_messages(client, links):
             st.error(f"Error retrieving message for link **{link}**: {error}")
             continue
         if message:
+            raw_messages.append((link, message))
             # Process reactions if available.
             reactions_str = ""
             if message.reactions and hasattr(message.reactions, 'results') and message.reactions.results:
@@ -87,7 +90,7 @@ async def process_messages(client, links):
             results.append(data)
         else:
             st.warning(f"No message found for link: {link}")
-    return results
+    return results, raw_messages
 
 
 # -------------------------------------------
@@ -137,7 +140,7 @@ if "client" in st.session_state:
             links = [link.strip() for link in re.split(r"[\s,]+", links_input) if link.strip()]
             st.write("Processed Links:", ", ".join(links))
             with st.spinner("Retrieving message data..."):
-                results = st.session_state.loop.run_until_complete(
+                results, raw_messages = st.session_state.loop.run_until_complete(
                     process_messages(st.session_state.client, links)
                 )
             if results:
@@ -153,5 +156,12 @@ if "client" in st.session_state:
                 )
             else:
                 st.warning("No message data was retrieved. Please check your links or try again.")
+
+            # Display raw message objects in individual text boxes.
+            if raw_messages:
+                st.subheader("Raw Message Objects")
+                for link, message in raw_messages:
+                    with st.expander(f"Message from {link}"):
+                        st.text_area("Message Object", value=str(message), height=200, disabled=True)
         else:
             st.error("Please enter some Telegram post links.")
