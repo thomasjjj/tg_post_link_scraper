@@ -11,7 +11,7 @@ from telethon.errors import SessionPasswordNeededError
 nest_asyncio.apply()
 
 # -------------------------------------------
-# Translation Dictionary (omitted for brevity; assume same as before)
+# Translation Dictionary
 # -------------------------------------------
 MESSAGES = {
     "title": {"en": "Telegram Post Data Retriever", "uk": "Отримувач даних публікацій Telegram"},
@@ -25,7 +25,7 @@ MESSAGES = {
             "1. Retrieve your Telegram API credentials by visiting [my.telegram.org](https://my.telegram.org). Log in with your phone number, then navigate to **API Development Tools** to create a new application. Your API ID and API Hash will be provided.\n\n"
             "2. Enter your API credentials and phone number below, then click **Sign In**.\n\n"
             "3. If required, enter the authentication code that Telegram sends you. If two‐factor authentication is enabled, you will then be prompted for your password.\n\n"
-            "4. Once signed in, enter one or more Telegram post links (e.g. `https://t.me/channel/12345`) to retrieve message data. The data will be displayed in a table and as raw message objects. You can also download the data as a CSV file.\n\n"
+            "4. Once signed in, enter one or more Telegram post or chat links (e.g. `https://t.me/channel/12345` or `https://t.me/c/1567469683/2394725`) to retrieve message data. The data will be displayed in a table and as raw message objects. You can also download the data as a CSV file.\n\n"
             "If you encounter a **'database is locked'** error, click **Reset Session** to disconnect any previous session."
         ),
         "uk": (
@@ -33,7 +33,7 @@ MESSAGES = {
             "1. Отримайте свої облікові дані Telegram API, відвідавши [my.telegram.org](https://my.telegram.org). Увійдіть за допомогою свого номера телефону, а потім перейдіть до **API Development Tools**, щоб створити новий додаток. Вам будуть надані API ID та API Hash.\n\n"
             "2. Введіть свої облікові дані API та номер телефону нижче, а потім натисніть **Увійти**.\n\n"
             "3. Якщо потрібно, введіть код аутентифікації, який надсилає Telegram. Якщо увімкнено двофакторну аутентифікацію, ви будете запитані про ваш пароль.\n\n"
-            "4. Після входу введіть одне або декілька посилань публікацій Telegram (наприклад, `https://t.me/channel/12345`), щоб отримати дані повідомлень. Дані будуть відображені у вигляді таблиці та як сирі об'єкти повідомлень. Також ви зможете завантажити дані у форматі CSV.\n\n"
+            "4. Після входу введіть одне або декілька посилань публікацій або чатів Telegram (наприклад, `https://t.me/channel/12345` або `https://t.me/c/1567469683/2394725`), щоб отримати дані повідомлень. Дані будуть відображені у вигляді таблиці та як сирі об'єкти повідомлень. Також ви зможете завантажити дані у форматі CSV.\n\n"
             "Якщо ви отримаєте помилку **'database is locked'**, натисніть **Скинути сесію**, щоб розірвати попередню сесію."
         )
     },
@@ -116,21 +116,30 @@ async def async_get_telegram_client(api_id, api_hash, phone):
     return client
 
 # -------------------------------------------
-# Helper functions for message processing
+# Helper function to process links
 # -------------------------------------------
 def process_link(link):
-    pattern = r"(?:https?://)?t\.me/([^/]+)/(\d+)"
-    match = re.search(pattern, link)
-    if match:
-        channel_username = match.group(1)
-        message_id = int(match.group(2))
-        return channel_username, message_id
-    else:
-        return None, None
+    # If the link is in the /c/ format, use a different pattern.
+    pattern_chat = r"(?:https?://)?t\.me/c/(\d+)/(\d+)"
+    match_chat = re.search(pattern_chat, link)
+    if match_chat:
+        # For t.me/c/ links, the numeric part must be converted.
+        # The actual channel id is -(int(id) + 1000000000000)
+        channel_id = -(int(match_chat.group(1)) + 1000000000000)
+        message_id = int(match_chat.group(2))
+        return channel_id, message_id
+    # Otherwise, try the standard pattern with username.
+    pattern_username = r"(?:https?://)?t\.me/([^/]+)/(\d+)"
+    match_username = re.search(pattern_username, link)
+    if match_username:
+        username = match_username.group(1)
+        message_id = int(match_username.group(2))
+        return username, message_id
+    return None, None
 
-async def get_message_data(client, channel_username, message_id):
+async def get_message_data(client, channel_identifier, message_id):
     try:
-        message = await client.get_messages(channel_username, ids=message_id)
+        message = await client.get_messages(channel_identifier, ids=message_id)
     except Exception as e:
         return None, str(e)
     return message, None
@@ -139,12 +148,14 @@ async def process_messages(client, links):
     results = []
     raw_messages = []
     for link in links:
-        channel_username, message_id = process_link(link)
-        if not channel_username:
+        channel_identifier, message_id = process_link(link)
+        if channel_identifier is None:
             st.warning(f"{MESSAGES['link_not_recognised'][lang]} {link}")
             continue
-        st.write(MESSAGES["processing_message"][lang].format(channel=channel_username, msg_id=message_id))
-        message, error = await get_message_data(client, channel_username, message_id)
+        # Display differently if it's an integer (chat) or string (username)
+        display_channel = channel_identifier if isinstance(channel_identifier, str) else f"Chat {channel_identifier}"
+        st.write(MESSAGES["processing_message"][lang].format(channel=display_channel, msg_id=message_id))
+        message, error = await get_message_data(client, channel_identifier, message_id)
         if error:
             st.error(MESSAGES["sign_in_error_prefix"][lang] + f"{link}: {error}")
             continue
@@ -162,7 +173,7 @@ async def process_messages(client, links):
             if message.entities:
                 entities_str = ", ".join({type(entity).__name__ for entity in message.entities})
             data = {
-                "Channel": channel_username,
+                "Channel": display_channel,
                 "Message ID": message.id,
                 "Date": message.date.strftime("%Y-%m-%d %H:%M:%S") if message.date else None,
                 "Edit Date": message.edit_date.strftime("%Y-%m-%d %H:%M:%S") if message.edit_date else None,
